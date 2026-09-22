@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Supabase Practice Lab</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:#f5f5f7;color:#17131f}
+    .wrap{max-width:1050px;margin:auto;padding:32px 20px}
+    header{background:#24123d;color:white;border-radius:24px;padding:32px;margin-bottom:20px}
+    h1{margin:0 0 8px;font-size:32px}
+    header p{margin:0;color:#ddd3e9}
+    .grid{display:grid;grid-template-columns:330px 1fr;gap:20px}
+    .card{background:white;border:1px solid #e7e2eb;border-radius:20px;padding:22px;box-shadow:0 8px 25px #24123d0b}
+    h2{font-size:18px;margin:0 0 16px}
+    label{display:block;font-size:13px;font-weight:700;margin:14px 0 7px}
+    input,textarea{width:100%;border:1px solid #d8d2df;border-radius:11px;padding:11px;font:inherit;outline:none}
+    textarea{min-height:110px;resize:vertical}
+    input:focus,textarea:focus{border-color:#6e35a5;box-shadow:0 0 0 3px #6e35a515}
+    button{border:0;border-radius:11px;padding:11px 15px;font-weight:700;cursor:pointer}
+    .primary{background:#6e35a5;color:white;width:100%;margin-top:16px}
+    .secondary{background:#eeeaf1;color:#33263d}
+    .danger{background:#fff0f0;color:#b3261e}
+    .row{display:flex;gap:8px;align-items:center}
+    .status{font-size:13px;margin-top:12px;padding:10px;border-radius:10px;background:#f1edf5}
+    .note{border:1px solid #e7e2eb;border-radius:15px;padding:16px;margin-bottom:12px}
+    .note h3{margin:0 0 6px;font-size:17px}
+    .note p{margin:0 0 12px;color:#5e5665;white-space:pre-wrap}
+    .meta{font-size:12px;color:#8a8290}
+    .empty{text-align:center;color:#8a8290;padding:40px 10px}
+    code{background:#eeeaf1;padding:2px 5px;border-radius:5px}
+    @media(max-width:760px){.grid{grid-template-columns:1fr}.wrap{padding:18px 12px}header{padding:24px}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Supabase Practice Lab</h1>
+    <p>A tiny notes app to practice Supabase Auth + Database CRUD.</p>
+  </header>
+
+  <div class="grid">
+    <section class="card">
+      <h2>1. Connect Supabase</h2>
+      <label>Supabase URL</label>
+      <input id="supabaseUrl" placeholder="https://xxxxx.supabase.co" />
+
+      <label>Publishable / anon key</label>
+      <input id="supabaseKey" type="password" placeholder="Your public client key" />
+
+      <button class="primary" id="connectBtn">Connect</button>
+      <div class="status" id="status">Not connected</div>
+
+      <h2 style="margin-top:28px">2. Add a note</h2>
+      <label>Title</label>
+      <input id="title" placeholder="e.g. Learn Supabase RLS" />
+
+      <label>Content</label>
+      <textarea id="content" placeholder="Write something..."></textarea>
+
+      <button class="primary" id="addBtn" disabled>Add Note</button>
+    </section>
+
+    <section class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Your Notes</h2>
+        <button class="secondary" id="refreshBtn" disabled>Refresh</button>
+      </div>
+      <div id="notes" style="margin-top:18px">
+        <div class="empty">Connect Supabase to load notes.</div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+let supabaseClient = null;
+
+// This file uses the Supabase browser CDN.
+// No framework or build step is required.
+const script = document.createElement("script");
+script.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
+script.onload = () => {
+  console.log("Supabase JS loaded");
+};
+document.head.appendChild(script);
+
+const $ = id => document.getElementById(id);
+
+function setStatus(message, error=false) {
+  $("status").textContent = message;
+  $("status").style.background = error ? "#fff0f0" : "#f1edf5";
+  $("status").style.color = error ? "#b3261e" : "#33263d";
+}
+
+async function connect() {
+  const url = $("supabaseUrl").value.trim();
+  const key = $("supabaseKey").value.trim();
+
+  if (!url || !key) return setStatus("Enter both Supabase URL and key.", true);
+  if (!window.supabase) return setStatus("Supabase library is still loading. Try again.", true);
+
+  try {
+    supabaseClient = window.supabase.createClient(url, key);
+    const { error } = await supabaseClient.from("notes").select("id").limit(1);
+    if (error) throw error;
+
+    setStatus("Connected successfully ✓");
+    $("addBtn").disabled = false;
+    $("refreshBtn").disabled = false;
+    await loadNotes();
+  } catch (err) {
+    supabaseClient = null;
+    $("addBtn").disabled = true;
+    $("refreshBtn").disabled = true;
+    setStatus("Connection/table error: " + err.message, true);
+  }
+}
+
+async function loadNotes() {
+  if (!supabaseClient) return;
+
+  $("notes").innerHTML = '<div class="empty">Loading...</div>';
+
+  const { data, error } = await supabaseClient
+    .from("notes")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    $("notes").innerHTML = '<div class="empty">Error: ' + escapeHtml(error.message) + '</div>';
+    return;
+  }
+
+  if (!data.length) {
+    $("notes").innerHTML = '<div class="empty">No notes yet. Add your first one.</div>';
+    return;
+  }
+
+  $("notes").innerHTML = data.map(note => `
+    <article class="note">
+      <h3>${escapeHtml(note.title)}</h3>
+      <p>${escapeHtml(note.content || "")}</p>
+      <div class="row">
+        <span class="meta">${new Date(note.created_at).toLocaleString()}</span>
+        <span style="flex:1"></span>
+        <button class="danger" onclick="deleteNote('${note.id}')">Delete</button>
+      </div>
+    </article>
+  `).join("");
+}
+
+async function addNote() {
+  const title = $("title").value.trim();
+  const content = $("content").value.trim();
+
+  if (!title) return alert("Enter a title.");
+
+  const { error } = await supabaseClient
+    .from("notes")
+    .insert({ title, content });
+
+  if (error) return alert(error.message);
+
+  $("title").value = "";
+  $("content").value = "";
+  await loadNotes();
+}
+
+async function deleteNote(id) {
+  if (!confirm("Delete this note?")) return;
+
+  const { error } = await supabaseClient
+    .from("notes")
+    .delete()
+    .eq("id", id);
+
+  if (error) return alert(error.message);
+  await loadNotes();
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+$("connectBtn").addEventListener("click", connect);
+$("addBtn").addEventListener("click", addNote);
+$("refreshBtn").addEventListener("click", loadNotes);
+</script>
+</body>
+</html>
